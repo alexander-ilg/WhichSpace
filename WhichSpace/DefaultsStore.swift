@@ -44,6 +44,8 @@ enum KeySpecs {
         name: "inactiveSpaceOpacity",
         defaultValue: Layout.defaultInactiveSpaceOpacity
     )
+    static let dockBadgeBackgroundColor = TypedKeySpec(name: "dockBadgeBackgroundColor", defaultValue: Data?.none)
+    static let dockBadgeForegroundColor = TypedKeySpec(name: "dockBadgeForegroundColor", defaultValue: Data?.none)
     static let displayOrder = TypedKeySpec(name: "displayOrder", defaultValue: DisplayOrder.system)
     static let displaySpaceBadges = TypedKeySpec(
         name: "displaySpaceBadges",
@@ -109,6 +111,7 @@ enum KeySpecs {
     static let preserveSystemSpaceNumbers = TypedKeySpec(name: "preserveSystemSpaceNumbers", defaultValue: false)
     static let screenOrderNumbering = TypedKeySpec(name: "screenOrderNumbering", defaultValue: false)
     static let hideEmptySpaces = TypedKeySpec(name: "hideEmptySpaces", defaultValue: false)
+    static let hideMenuBarIcon = TypedKeySpec(name: "hideMenuBarIcon", defaultValue: false)
     static let hideFullscreenApps = TypedKeySpec(name: "hideFullscreenApps", defaultValue: false)
     static let hideSingleSpace = TypedKeySpec(name: "hideSingleSpace", defaultValue: false)
     static let localSpaceNumbers = TypedKeySpec(name: "localSpaceNumbers", defaultValue: false)
@@ -135,6 +138,7 @@ enum KeySpecs {
     static let separatorStyle = TypedKeySpec(name: "separatorStyle", defaultValue: SeparatorStyle.line)
     static let showAllDisplays = TypedKeySpec(name: "showAllDisplays", defaultValue: false)
     static let showAllSpaces = TypedKeySpec(name: "showAllSpaces", defaultValue: false)
+    static let showInDock = TypedKeySpec(name: "showInDock", defaultValue: false)
     static let shrinkIconToFit = TypedKeySpec(name: "shrinkIconToFit", defaultValue: false)
     static let sizeScale = TypedKeySpec(name: "sizeScale", defaultValue: Layout.defaultSizeScale)
     static let soundName = TypedKeySpec(name: "soundName", defaultValue: "")
@@ -169,6 +173,8 @@ enum KeySpecs {
         clickToSwitchSpaces,
         inactiveSpaceOpacity,
         displayOrder,
+        dockBadgeBackgroundColor,
+        dockBadgeForegroundColor,
         displaySpaceBadges,
         displaySpaceColors,
         displaySpaceFonts,
@@ -185,6 +191,7 @@ enum KeySpecs {
         fullscreenIconStyle,
         hideEmptySpaces,
         hideFullscreenApps,
+        hideMenuBarIcon,
         hideSingleSpace,
         horizontalScrollEnabled,
         hotkeysMoveSkipEmptySpaces,
@@ -206,6 +213,7 @@ enum KeySpecs {
         separatorStyle,
         showAllDisplays,
         showAllSpaces,
+        showInDock,
         shrinkIconToFit,
         sizeScale,
         soundName,
@@ -235,6 +243,9 @@ enum KeySpecs {
         classicSpaceSwitching.name,
         clickToSwitchSpaces.name,
         displaySpaceSounds.name,
+        dockBadgeBackgroundColor.name,
+        dockBadgeForegroundColor.name,
+        hideMenuBarIcon.name,
         horizontalScrollEnabled.name,
         hotkeysMoveSkipEmptySpaces.name,
         hotkeysSendSkipEmptySpaces.name,
@@ -247,6 +258,7 @@ enum KeySpecs {
         scrollHapticIntensity.name,
         scrollSensitivity.name,
         scrollWrapAround.name,
+        showInDock.name,
         soundName.name,
         spaceOrders.name,
         spacePickerMaxAppIcons.name,
@@ -318,6 +330,8 @@ final class DefaultsStore {
     /// write, dropped via `invalidateCachedValues()` for external changes.
     private var cachedValues: [String: Any] = [:]
     private var cachedSeparatorColor: NSColor??
+    /// Decoded archived colours keyed by spec name, same reason as above
+    private var cachedColors: [String: NSColor?] = [:]
 
     init(suite: UserDefaults) {
         self.suite = suite
@@ -368,6 +382,37 @@ final class DefaultsStore {
     func invalidateCachedValues() {
         cachedValues.removeAll()
         cachedSeparatorColor = nil
+        cachedColors.removeAll()
+    }
+
+    /// Reads an archived optional colour, memoized like the other values.
+    private func archivedColor(_ spec: TypedKeySpec<Data?>) -> NSColor? {
+        if let index = cachedColors.index(forKey: spec.name) {
+            return cachedColors[index].value
+        }
+        var color: NSColor?
+        if let data = self[spec] {
+            do {
+                color = try NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data)
+            } catch {
+                NSLog("DefaultsStore: failed to unarchive %@: %@", spec.name, error.localizedDescription)
+            }
+        }
+        cachedColors[spec.name] = color
+        return color
+    }
+
+    private func setArchivedColor(_ color: NSColor?, for spec: TypedKeySpec<Data?>) {
+        cachedColors[spec.name] = color
+        guard let color else {
+            self[spec] = nil
+            return
+        }
+        do {
+            self[spec] = try NSKeyedArchiver.archivedData(withRootObject: color, requiringSecureCoding: true)
+        } catch {
+            NSLog("DefaultsStore: failed to archive %@: %@", spec.name, error.localizedDescription)
+        }
     }
 
     /// Returns a suite-bound `Defaults.Key` for the given spec. Used by callers
@@ -438,6 +483,20 @@ final class DefaultsStore {
     var displayOrder: DisplayOrder {
         get { self[KeySpecs.displayOrder] }
         set { self[KeySpecs.displayOrder] = newValue }
+    }
+
+    /// Fill of the Space number badge and label pill on the Dock tile; nil
+    /// draws `IconColors.dockBadgeBackground`
+    var dockBadgeBackgroundColor: NSColor? {
+        get { archivedColor(KeySpecs.dockBadgeBackgroundColor) }
+        set { setArchivedColor(newValue, for: KeySpecs.dockBadgeBackgroundColor) }
+    }
+
+    /// Text of the Space number badge and label pill on the Dock tile; nil
+    /// draws `IconColors.dockBadgeForeground`
+    var dockBadgeForegroundColor: NSColor? {
+        get { archivedColor(KeySpecs.dockBadgeForegroundColor) }
+        set { setArchivedColor(newValue, for: KeySpecs.dockBadgeForegroundColor) }
     }
 
     var displaySpaceBadges: [String: [Int: SpaceBadge]] {
@@ -669,6 +728,19 @@ final class DefaultsStore {
     var showAllSpaces: Bool {
         get { self[KeySpecs.showAllSpaces] }
         set { self[KeySpecs.showAllSpaces] = newValue }
+    }
+
+    /// Whether the app owns a Dock tile showing the current Space
+    var showInDock: Bool {
+        get { self[KeySpecs.showInDock] }
+        set { self[KeySpecs.showInDock] = newValue }
+    }
+
+    /// Whether the status item is withdrawn; only honoured while the Dock
+    /// tile is shown, so the app always has one surface
+    var hideMenuBarIcon: Bool {
+        get { self[KeySpecs.hideMenuBarIcon] }
+        set { self[KeySpecs.hideMenuBarIcon] = newValue }
     }
 
     var shrinkIconToFit: Bool {

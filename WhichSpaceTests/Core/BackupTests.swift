@@ -529,10 +529,12 @@ final class BackupManagerTests: IsolatedDefaultsTestCase {
     }
 
     func testEncodeCoversEveryScalarDefaultsKey() throws {
-        // separatorColor and clickToSwitchSpaces are optional in the JSON and
-        // omitted when nil
+        // separatorColor, clickToSwitchSpaces and the Dock badge colours are
+        // optional in the JSON and omitted when nil
         store.separatorColor = .systemRed
         store.clickToSwitchSpaces = true
+        store.dockBadgeBackgroundColor = .systemBlue
+        store.dockBadgeForegroundColor = .white
 
         let json = try BackupManager.encode(store: store)
         let data = try XCTUnwrap(json.data(using: .utf8))
@@ -985,6 +987,21 @@ final class BackupManagerTests: IsolatedDefaultsTestCase {
         let backup = try BackupManager.decode(jsonString: XCTUnwrap(String(bytes: mangled, encoding: .utf8)))
         BackupManager.apply(backup, to: store)
         XCTAssertEqual(store.spacePickerStyle, .icons)
+    }
+
+    func testDockSettingsRoundTrip() throws {
+        store.showInDock = true
+        store.hideMenuBarIcon = true
+
+        let json = try BackupManager.encode(store: store, hotkeys: [:])
+        store.resetAll()
+        XCTAssertFalse(store.showInDock)
+        XCTAssertFalse(store.hideMenuBarIcon)
+
+        let backup = try BackupManager.decode(jsonString: json)
+        BackupManager.apply(backup, to: store)
+        XCTAssertTrue(store.showInDock)
+        XCTAssertTrue(store.hideMenuBarIcon)
     }
 
     func testExportAndLoadRoundTrip() throws {
